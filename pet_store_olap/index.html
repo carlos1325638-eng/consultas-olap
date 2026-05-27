@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OLAP — Pet Store 2020</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg:       #0b0e1a;
+  --surface:  #111827;
+  --surface2: #1a2235;
+  --border:   #1e2d45;
+  --c1: #00e5ff; --c2: #7c3aed; --c3: #10b981;
+  --c4: #f59e0b; --c5: #ef4444; --c6: #ec4899;
+  --text: #e2e8f0; --muted: #64748b; --dim: #94a3b8;
+  --sw: 228px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;overflow-x:hidden}
+
+/* ── SIDEBAR ── */
+#sidebar{width:var(--sw);min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100}
+.brand{padding:22px 18px 18px;border-bottom:1px solid var(--border)}
+.brand .logo{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--c1);letter-spacing:.08em}
+.brand .sub{font-size:10px;color:var(--muted);margin-top:3px}
+.db-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);color:#34d399;font-size:9px;padding:3px 8px;border-radius:99px;margin-top:8px;font-family:'IBM Plex Mono',monospace}
+#db-status{width:7px;height:7px;border-radius:50%;background:#ef4444;display:inline-block}
+#db-status.ok{background:#10b981}
+
+nav{flex:1;padding:12px 0}
+.nav-section{padding:6px 18px 4px;font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;cursor:pointer;transition:all .15s;font-size:12px;color:var(--dim);border-left:2px solid transparent}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--surface2);color:var(--c1);border-left-color:var(--c1)}
+.nav-item .icon{font-size:14px;width:18px;text-align:center}
+.badge{margin-left:auto;background:var(--c2);color:#fff;font-size:9px;padding:2px 6px;border-radius:99px}
+.badge.live{background:var(--c3)}
+.sidebar-footer{padding:14px 18px;border-top:1px solid var(--border);font-size:9px;color:var(--muted);line-height:1.6}
+
+/* ── MAIN ── */
+#main{margin-left:var(--sw);flex:1;display:flex;flex-direction:column}
+#topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 26px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.pt{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600}
+.ptag{background:var(--surface2);border:1px solid var(--border);color:var(--c1);font-size:10px;padding:3px 9px;border-radius:4px;font-family:'IBM Plex Mono',monospace;margin-left:10px}
+.chips{display:flex;gap:8px}
+.chip{background:var(--surface2);border:1px solid var(--border);color:var(--dim);font-size:10px;padding:4px 10px;border-radius:4px}
+
+#content{padding:26px;flex:1}
+.screen{display:none;animation:fu .28s ease}
+.screen.active{display:block}
+@keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── COMPONENTS ── */
+.sh{margin-bottom:20px}
+.sh h2{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700}
+.sh p{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.6}
+.olap-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(124,58,237,.13);border:1px solid rgba(124,58,237,.3);color:#a78bfa;font-size:10px;padding:3px 10px;border-radius:4px;margin-bottom:10px;font-family:'IBM Plex Mono',monospace}
+
+.kpi-row{display:grid;gap:12px;margin-bottom:20px}
+.k3{grid-template-columns:repeat(3,1fr)}
+.k4{grid-template-columns:repeat(4,1fr)}
+.kcard{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:15px 17px;position:relative;overflow:hidden}
+.kcard::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%}
+.kc1::before{background:var(--c1)}.kc2::before{background:var(--c2)}.kc3::before{background:var(--c3)}.kc4::before{background:var(--c4)}
+.klabel{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
+.kval{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:700}
+.ksub{font-size:10px;color:var(--dim);margin-top:3px}
+
+.cg{display:grid;gap:14px}
+.c2{grid-template-columns:1fr 1fr}
+.c3{grid-template-columns:1fr 1fr 1fr}
+.c12{grid-template-columns:1.25fr .75fr}
+.ccard{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:17px}
+.ccard h3{font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px}
+.chart-box{position:relative;width:100%}
+.chart-box canvas{position:absolute;top:0;left:0;width:100%!important;height:100%!important}
+
+.dtable{width:100%;border-collapse:collapse;font-size:12px}
+.dtable th{background:var(--surface2);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.06em;padding:8px 11px;text-align:left;border-bottom:1px solid var(--border)}
+.dtable td{padding:8px 11px;border-bottom:1px solid rgba(30,45,69,.4);color:var(--dim);vertical-align:middle}
+.dtable tr:hover td{background:var(--surface2)}
+.num{font-family:'IBM Plex Mono',monospace;color:var(--text)}
+.bmini{display:inline-block;height:5px;border-radius:3px;margin-left:6px;vertical-align:middle}
+.pill{display:inline-block;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600}
+.pg{background:rgba(16,185,129,.15);color:#34d399}
+.py{background:rgba(245,158,11,.15);color:#fbbf24}
+.pr{background:rgba(239,68,68,.15);color:#f87171}
+.pb{background:rgba(0,229,255,.12);color:var(--c1)}
+
+.hm-wrap{overflow-x:auto}
+table.hm{border-collapse:collapse;width:100%;font-size:11px}
+table.hm th{padding:6px 8px;text-align:center;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em}
+table.hm th:first-child{text-align:left}
+table.hm td{padding:6px 7px;text-align:center;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:default;transition:.15s}
+table.hm td:first-child{text-align:left;color:var(--dim);font-family:'IBM Plex Sans',sans-serif;font-size:11px;padding-right:12px}
+table.hm td:hover{outline:1px solid var(--c1)}
+
+.ibox{background:rgba(0,229,255,.04);border:1px solid rgba(0,229,255,.16);border-radius:6px;padding:12px 14px;margin-top:14px;font-size:11px;color:var(--dim);line-height:1.7}
+.ibox strong{color:var(--c1)}
+
+/* Loading */
+.loading{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;padding:30px 0}
+.spin{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--c1);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-box{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:12px 14px;color:#f87171;font-size:12px}
+
+/* ── SCREEN 6 ── */
+.rt-form{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.rt-f{display:flex;flex-direction:column;gap:5px;min-width:140px;flex:1}
+.rt-f label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.rt-f select{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:8px 10px;font-size:12px;font-family:'IBM Plex Sans',sans-serif;outline:none;transition:.15s;cursor:pointer}
+.rt-f select:disabled{opacity:.35;cursor:not-allowed;border-color:var(--border)}
+.filter-field{transition:opacity .2s}
+.filter-field.disabled{opacity:.3;pointer-events:none}
+.filter-field.hidden{display:none}
+.btn-run{background:var(--c1);color:#0b0e1a;border:none;cursor:pointer;padding:9px 22px;border-radius:5px;font-size:12px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:.05em;transition:all .15s;white-space:nowrap}
+.btn-run:hover{background:#33ecff;transform:translateY(-1px)}
+.btn-run:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-clr{background:transparent;color:var(--muted);border:1px solid var(--border);cursor:pointer;padding:9px 14px;border-radius:5px;font-size:12px;font-family:'IBM Plex Sans',sans-serif;transition:.15s;white-space:nowrap}
+.btn-clr:hover{border-color:var(--c5);color:var(--c5)}
+
+#rt-result-hdr{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:10px;display:none}
+#rt-result-hdr strong{color:var(--c3)}
+#rt-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
+.empty{text-align:center;padding:50px 20px;color:var(--muted);font-size:12px}
+.empty .ei{font-size:32px;margin-bottom:10px}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+@media(max-width:900px){.c2,.c3,.c12{grid-template-columns:1fr}.k3,.k4{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div class="brand">
+    <div class="logo">PET STORE</div>
+    <div class="db-pill"><span id="db-status"></span><span id="db-label">Verificando BD…</span></div>
+  </div>
+  <nav>
+    <div class="nav-section">Consultas OLAP</div>
+    <div class="nav-item active" onclick="nav('s1',this,'Ventas por Categoría','Roll-Up')">
+      <span class="icon"></span>Ventas por Categoría<span class="badge">Roll-Up</span>
+    </div>
+    <div class="nav-item" onclick="nav('s2',this,'Análisis por País','Drill-Down')">
+      <span class="icon"></span>Análisis por País<span class="badge">Drill-Down</span>
+    </div>
+    <div class="nav-item" onclick="nav('s3',this,'Mascota × Categoría','Slice + Dice')">
+      <span class="icon"></span>Mascota × Categoría<span class="badge">Slice+Dice</span>
+    </div>
+    <div class="nav-item" onclick="nav('s4',this,'Rating & Recompra','Pivot')">
+      <span class="icon"></span>Rating & Recompra<span class="badge">Pivot</span>
+    </div>
+    <div class="nav-item" onclick="nav('s5',this,'Tamaño × País','Dice')">
+      <span class="icon"></span>Tamaño × País<span class="badge">Dice</span>
+    </div>
+    <div class="nav-section" style="margin-top:6px">Interactivo</div>
+    <div class="nav-item" onclick="nav('s6',this,'Consulta en Tiempo Real','')">
+      <span class="icon"></span>Consulta en Tiempo Real<span class="badge live">Live</span>
+    </div>
+  </nav>
+ 
+</aside>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="topbar">
+    <div style="display:flex;align-items:center">
+      <span class="pt" id="tb-title">Ventas Totales por Categoría de Producto</span>
+      <span class="ptag" id="tb-tag">Roll-Up</span>
+    </div>
+    <div class="chips">
+      <span class="chip" id="chip-rows">— registros</span>
+      <span class="chip">11 categorías</span>
+      <span class="chip">9 países</span>
+    </div>
+  </div>
+
+  <div id="content">
+
+    <!-- ══ S1 — Ventas por Categoría (Roll-Up) ══ -->
+    <div class="screen active" id="s1">
+      <div class="sh">
+        <div class="olap-badge">Roll-Up — Nivel: Categoría global</div>
+        <h2>Ventas Totales por Categoría de Producto</h2>
+        <p>¿Qué categoría genera más ventas e ingresos? Agrupamos al nivel más alto.</p>
+      </div>
+      <div class="kpi-row k4" id="kpi1"></div>
+      <div class="cg c12">
+        <div class="ccard"><h3>Ventas totales</h3><div class="chart-box" style="height:240px"><canvas id="ch1a"></canvas></div></div>
+        <div class="ccard"><h3>Distribución %</h3><div class="chart-box" style="height:240px"><canvas id="ch1b"></canvas></div></div>
+      </div>
+      <div class="ccard" style="margin-top:14px">
+        <h3>Tabla — Roll-Up por categoría</h3>
+        <div id="t1"></div>
+      </div>
+      <div class="ibox"><strong>Decisión:</strong> Equipment y Snack lideran en volumen, pero Food y Supplements tienen los ratings más altos. Reforzar inventario en categorías de alto volumen mientras se eleva visibilidad de las mejor valoradas.</div>
+    </div>
+
+    <!-- ══ S2 — Por País (Drill-Down) ══ -->
+    <div class="screen" id="s2">
+      <div class="sh">
+        <div class="olap-badge">Drill-Down — Global → País</div>
+        <h2>Ventas y Precio Promedio por País</h2>
+        <p>¿En qué mercados conviene invertir? Bajamos del nivel global al detalle por país.</p>
+      </div>
+      <div class="kpi-row k3" id="kpi2"></div>
+      <div class="cg c3">
+        <div class="ccard"><h3>Ventas por país</h3><div class="chart-box" style="height:210px"><canvas id="ch2a"></canvas></div></div>
+        <div class="ccard"><h3>Precio promedio ($)</h3><div class="chart-box" style="height:210px"><canvas id="ch2b"></canvas></div></div>
+        <div class="ccard"><h3>Tasa de recompra (%)</h3><div class="chart-box" style="height:210px"><canvas id="ch2c"></canvas></div></div>
+      </div>
+      <div class="ccard" style="margin-top:14px">
+        <h3>Detalle por país</h3><div id="t2"></div>
+      </div>
+      <div class="ibox"><strong>Decisión:</strong> India domina el volumen. Vietnam, Sri Lanka y Japón tienen recompra del 100% (muestras pequeñas). USA y Turkey ofrecen precios altos — mercados de alto valor a desarrollar.</div>
+    </div>
+
+    <!-- ══ S3 — Mascota × Categoría (Slice+Dice) ══ -->
+    <div class="screen" id="s3">
+      <div class="sh">
+        <div class="olap-badge">Slice + Dice — 2 dimensiones</div>
+        <h2>Ingresos por Tipo de Mascota × Categoría</h2>
+        <p>¿Qué productos compra cada dueño? Cruce de pet_type y product_category en tiempo real.</p>
+      </div>
+      <div class="kpi-row k4" id="kpi3"></div>
+      <div class="ccard"><h3>Heatmap — Mascota × Categoría (ventas)</h3><div class="hm-wrap" id="hm3"></div></div>
+      <div class="ccard" style="margin-top:14px"><h3>Ventas por mascota (barras apiladas)</h3><div class="chart-box" style="height:180px"><canvas id="ch3"></canvas></div></div>
+      <div class="ibox"><strong>Decisión:</strong> Gatos y perros dominan casi todas las categorías. Bird y Fish relevantes en Equipment/Toys. Hamster y Rabbit son nichos — cubrir solo con línea básica Food + Housing.</div>
+    </div>
+
+    <!-- ══ S4 — Rating & Recompra (Pivot) ══ -->
+    <div class="screen" id="s4">
+      <div class="sh">
+        <div class="olap-badge"> Pivot — Métricas cruzadas</div>
+        <h2>Análisis de Rating y Re-compra por Categoría</h2>
+        <p>¿Qué productos tienen mayor fidelización? Pivotamos rating vs tasa de recompra.</p>
+      </div>
+      <div class="kpi-row k4" id="kpi4"></div>
+      <div class="cg c2">
+        <div class="ccard"><h3>Rating promedio</h3><div class="chart-box" style="height:230px"><canvas id="ch4a"></canvas></div></div>
+        <div class="ccard"><h3>Tasa de recompra (%)</h3><div class="chart-box" style="height:230px"><canvas id="ch4b"></canvas></div></div>
+      </div>
+      <div class="ccard" style="margin-top:14px"><h3>Scatter — Rating vs Recompra</h3><div class="chart-box" style="height:210px"><canvas id="ch4c"></canvas></div></div>
+      <div class="ccard" style="margin-top:14px"><h3>Tabla Pivot</h3><div id="t4"></div></div>
+      <div class="ibox"><strong>Decisión:</strong> Food y Supplements tienen alto rating pero recompra media — oportunidad de programas de lealtad. Bedding lidera en recompra. Toys y Snack tienen ratings más bajos — revisar calidad.</div>
+    </div>
+
+    <!-- ══ S5 — Tamaño × País (Dice) ══ -->
+    <div class="screen" id="s5">
+      <div class="sh">
+        <div class="olap-badge"> Dice — Segmentación múltiple</div>
+        <h2>Ventas por Tamaño de Mascota × País</h2>
+        <p>¿Dónde se concentran los segmentos por tamaño? Localizamos oportunidades de mercado.</p>
+      </div>
+      <div class="kpi-row k3" id="kpi5"></div>
+      <div class="ccard"><h3>Heatmap — Tamaño × País</h3><div class="hm-wrap" id="hm5"></div></div>
+      <div class="cg c2" style="margin-top:14px">
+        <div class="ccard"><h3>Total por tamaño (global)</h3><div class="chart-box" style="height:210px"><canvas id="ch5a"></canvas></div></div>
+        <div class="ccard"><h3>Distribución por país (principales)</h3><div class="chart-box" style="height:210px"><canvas id="ch5b"></canvas></div></div>
+      </div>
+      <div class="ibox"><strong>Decisión:</strong> India es el único mercado con todos los segmentos — ideal para pruebas de productos. Vietnam se especializa en mascotas pequeñas. Diseñar campañas segmentadas por tamaño y región.</div>
+    </div>
+
+    <!-- ══ S6 — Consulta en Tiempo Real ══ -->
+    <div class="screen" id="s6">
+      <div class="sh">
+        <div class="olap-badge" style="background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.3);color:#34d399"> Consulta interactiva en tiempo real</div>
+        <h2>Consulta Personalizada en Tiempo Real</h2>
+        <p>Los filtros disponibles se actualizan automáticamente según la dimensión y métrica seleccionadas.</p>
+      </div>
+
+      <!-- Fila 1: Dimensión + Métrica + Tipo gráfica -->
+      <div class="rt-form" style="margin-bottom:10px">
+        <div class="rt-f">
+          <label>① Dimensión (Agrupar por)</label>
+          <select id="rt-dim" onchange="updateFilters()">
+            <option value="product_category">Categoría de producto</option>
+            <option value="country">País</option>
+            <option value="pet_type">Tipo de mascota</option>
+            <option value="pet_size">Tamaño de mascota</option>
+          </select>
+        </div>
+        <div class="rt-f">
+          <label>② Métrica a calcular</label>
+          <select id="rt-metric" onchange="updateFilters()">
+            <option value="sales_sum">Ventas totales (SUM sales)</option>
+            <option value="sales_avg">Ventas promedio (AVG sales)</option>
+            <option value="price_avg">Precio promedio (AVG price)</option>
+            <option value="rating_avg">Rating promedio (AVG rating)</option>
+            <option value="rebuy_pct">Tasa de recompra % (AVG re_buy)</option>
+            <option value="count">Nº de registros (COUNT)</option>
+          </select>
+        </div>
+        <div class="rt-f">
+          <label>Tipo de gráfica</label>
+          <select id="rt-chart">
+            <option value="bar">Barras verticales</option>
+            <option value="hbar">Barras horizontales</option>
+            <option value="doughnut">Dona</option>
+            <option value="line">Línea</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Fila 2: Filtros dinámicos -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:14px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:12px">
+          ③ Filtros disponibles <span id="filter-hint" style="color:var(--c3);font-size:9px;margin-left:8px;text-transform:none;letter-spacing:0"></span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+
+          <!-- Filtro Categoría -->
+          <div class="rt-f filter-field" id="ff-cat">
+            <label>Categoría</label>
+            <select id="rt-fcat">
+              <option value="">— Todas —</option>
+              <option>Accessory</option><option>Bedding</option><option>Clothes</option>
+              <option>Equipment</option><option>Food</option><option>Grooming</option>
+              <option>Housing</option><option>Medicine</option><option>Snack</option>
+              <option>Supplements</option><option>Toys</option>
+            </select>
+          </div>
+
+          <!-- Filtro País -->
+          <div class="rt-f filter-field" id="ff-country">
+            <label>País</label>
+            <select id="rt-fcountry">
+              <option value="">— Todos —</option>
+              <option>Belgium</option><option>Germany</option><option>India</option>
+              <option>Japan</option><option>Singapore</option><option>Sri Lanka</option>
+              <option>Turkey</option><option>USA</option><option>Vietnam</option>
+            </select>
+          </div>
+
+          <!-- Filtro Mascota -->
+          <div class="rt-f filter-field" id="ff-pet">
+            <label>Tipo de mascota</label>
+            <select id="rt-fpet">
+              <option value="">— Todas —</option>
+              <option>bird</option><option>cat</option><option>dog</option>
+              <option>fish</option><option>hamster</option><option>rabbit</option>
+            </select>
+          </div>
+
+          <!-- Filtro Tamaño -->
+          <div class="rt-f filter-field" id="ff-size">
+            <label>Tamaño mascota</label>
+            <select id="rt-fsize">
+              <option value="">— Todos —</option>
+              <option>extra_small</option><option>small</option><option>medium</option>
+              <option>large</option><option>extra_large</option>
+            </select>
+          </div>
+
+          <!-- Filtro VAP — solo aparece con métricas relevantes -->
+          <div class="rt-f filter-field" id="ff-vap">
+            <label>Aprobación Vet. (VAP)</label>
+            <select id="rt-fvap">
+              <option value="">— Todos —</option>
+              <option value="1">Con aprobación (VAP=1)</option>
+              <option value="0">Sin aprobación (VAP=0)</option>
+            </select>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <button class="btn-run" id="btn-run" onclick="runQ6()">▶ EJECUTAR</button>
+            <button class="btn-clr" onclick="clearQ6()">✕ Limpiar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ccard">
+        <div id="rt-result-hdr" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:10px"></div>
+        <div id="rt-chart-wrap"><div class="empty"><div class="ei">📊</div>Selecciona dimensión, métrica y presiona <strong>EJECUTAR</strong>.</div></div>
+      </div>
+      <div id="rt-summary"></div>
+      <div id="rt-table-wrap" style="margin-top:14px"></div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+// ── Colores ──────────────────────────────────────────
+const C  = ['#00e5ff','#7c3aed','#10b981','#f59e0b','#ef4444','#ec4899','#3b82f6','#84cc16','#f97316','#06b6d4','#8b5cf6'];
+const CA = C.map(c => c + 'bb');
+const charts = {};
+
+function dc(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+
+function mkBar(id,labels,vals,horiz=false,multi=false){
+  dc(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  const datasets = multi ? vals : [{label:'',data:vals,backgroundColor:CA,borderColor:C,borderWidth:1,borderRadius:3}];
+  charts[id] = new Chart(ctx,{
+    type:'bar',
+    data:{labels,datasets},
+    options:{
+      indexAxis: horiz?'y':'x',
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:multi,labels:{color:'#94a3b8',font:{size:9},boxWidth:10}}},
+      scales:{
+        x:{stacked:multi,ticks:{color:'#64748b',font:{size:10}},grid:{color:'#1e2d4566'}},
+        y:{stacked:multi,ticks:{color:'#64748b',font:{size:10}},grid:{color:'#1e2d4566'}}
+      }
+    }
+  });
+}
+
+function mkPie(id,labels,vals){
+  dc(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:vals,backgroundColor:CA,borderColor:C,borderWidth:1}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#94a3b8',font:{size:10},boxWidth:10}}}}});
+}
+
+// ── Llamada a la API PHP ──────────────────────────────
+async function api(params){
+  const url = 'api.php?' + new URLSearchParams(params);
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('HTTP ' + r.status);
+  const data = await r.json();
+  if(data.error) throw new Error(data.error);
+  return data;
+}
+
+function loading(el){ document.getElementById(el).innerHTML='<div class="loading"><div class="spin"></div>Consultando MySQL…</div>'; }
+function errBox(el,msg){ document.getElementById(el).innerHTML=`<div class="error-box">⚠️ ${msg}</div>`; }
+
+// ── Verificar conexión BD ─────────────────────────────
+async function checkDB(){
+  try {
+    const data = await api({q:'q1'});
+    document.getElementById('db-status').className='ok';
+    document.getElementById('db-label').textContent='BD conectada';
+    // Total registros
+    const total = data.reduce((s,d)=>s+parseInt(d.registros||0),0);
+    document.getElementById('chip-rows').textContent = total + ' registros';
+    return data;
+  } catch(e){
+    document.getElementById('db-label').textContent='Error de BD';
+    return null;
+  }
+}
+
+// ── S1: Roll-Up ───────────────────────────────────────
+const inited={};
+async function initS1(){
+  loading('kpi1');
+  try {
+    const d = await api({q:'q1'});
+    const top = d[0];
+    const bestRat = d.reduce((a,b)=>parseFloat(b.rating_prom)>parseFloat(a.rating_prom)?b:a,d[0]);
+    const total = d.reduce((s,r)=>s+parseInt(r.ventas_totales),0);
+
+    document.getElementById('kpi1').innerHTML=`
+      <div class="kcard kc1"><div class="klabel">Total ventas</div><div class="kval">${total.toLocaleString()}</div><div class="ksub">unidades · 2020</div></div>
+      <div class="kcard kc2"><div class="klabel">Categoría líder</div><div class="kval" style="font-size:15px">${top.categoria}</div><div class="ksub">${parseInt(top.ventas_totales).toLocaleString()} uds · ${top.pct_ventas}%</div></div>
+      <div class="kcard kc3"><div class="klabel">Mejor valorada</div><div class="kval" style="font-size:15px">${bestRat.categoria}</div><div class="ksub">Rating prom. ${parseFloat(bestRat.rating_prom).toFixed(2)}</div></div>
+      <div class="kcard kc4"><div class="klabel">Categorías</div><div class="kval">${d.length}</div><div class="ksub">líneas de producto</div></div>
+    `;
+
+    mkBar('ch1a', d.map(r=>r.categoria), d.map(r=>parseInt(r.ventas_totales)));
+    mkPie('ch1b', d.map(r=>r.categoria), d.map(r=>parseFloat(r.pct_ventas)));
+
+    const maxV = Math.max(...d.map(r=>parseInt(r.ventas_totales)));
+    document.getElementById('t1').innerHTML=`
+      <table class="dtable">
+        <thead><tr><th>#</th><th>Categoría</th><th>Registros</th><th>Ventas</th><th>%</th><th>Precio Prom.</th><th>Rating</th></tr></thead>
+        <tbody>${d.map((r,i)=>{
+          const bw=Math.round(parseInt(r.ventas_totales)/maxV*80);
+          const rp=parseFloat(r.rating_prom);
+          const pc=rp>=7?'pg':rp>=6?'py':'pr';
+          return `<tr>
+            <td class="num" style="color:var(--muted)">${i+1}</td>
+            <td>${r.categoria}</td>
+            <td class="num">${r.registros}</td>
+            <td><span class="num">${parseInt(r.ventas_totales).toLocaleString()}</span><span class="bmini" style="width:${bw}px;background:${C[i%C.length]}44;border:1px solid ${C[i%C.length]}"></span></td>
+            <td><span class="pill pb">${r.pct_ventas}%</span></td>
+            <td class="num">$${parseInt(r.precio_prom).toLocaleString()}</td>
+            <td><span class="pill ${pc}">${rp.toFixed(1)}</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  } catch(e){ errBox('kpi1', e.message); }
+}
+
+// ── S2: Drill-Down ────────────────────────────────────
+const flags={India:'🇮🇳',Germany:'🇩🇪',Singapore:'🇸🇬',Belgium:'🇧🇪',USA:'🇺🇸',Turkey:'🇹🇷',Vietnam:'🇻🇳','Sri Lanka':'🇱🇰',Japan:'🇯🇵'};
+async function initS2(){
+  loading('kpi2');
+  try {
+    const d = await api({q:'q2'});
+    const top=d[0];
+    const topP=d.reduce((a,b)=>parseFloat(b.precio_prom)>parseFloat(a.precio_prom)?b:a,d[0]);
+    const topR=d.reduce((a,b)=>parseFloat(b.tasa_recompra)>parseFloat(a.tasa_recompra)?b:a,d[0]);
+
+    document.getElementById('kpi2').innerHTML=`
+      <div class="kcard kc1"><div class="klabel">País líder (ventas)</div><div class="kval" style="font-size:16px">${flags[top.pais]||''} ${top.pais}</div><div class="ksub">${parseInt(top.ventas_total).toLocaleString()} uds · ${top.pct_ventas}%</div></div>
+      <div class="kcard kc4"><div class="klabel">Precio más alto</div><div class="kval" style="font-size:16px">${flags[topP.pais]||''} ${topP.pais}</div><div class="ksub">$${parseInt(topP.precio_prom).toLocaleString()} prom.</div></div>
+      <div class="kcard kc3"><div class="klabel">Mayor recompra</div><div class="kval" style="font-size:16px">${flags[topR.pais]||''} ${topR.pais}</div><div class="ksub">${topR.tasa_recompra}%</div></div>
+    `;
+
+    mkBar('ch2a', d.map(r=>r.pais), d.map(r=>parseInt(r.ventas_total)), true);
+    mkBar('ch2b', [...d].sort((a,b)=>b.precio_prom-a.precio_prom).map(r=>r.pais),
+                  [...d].sort((a,b)=>b.precio_prom-a.precio_prom).map(r=>parseInt(r.precio_prom)), true);
+    mkBar('ch2c', [...d].sort((a,b)=>b.tasa_recompra-a.tasa_recompra).map(r=>r.pais),
+                  [...d].sort((a,b)=>b.tasa_recompra-a.tasa_recompra).map(r=>parseFloat(r.tasa_recompra)), true);
+
+    const maxV=Math.max(...d.map(r=>parseInt(r.ventas_total)));
+    document.getElementById('t2').innerHTML=`
+      <table class="dtable">
+        <thead><tr><th>País</th><th>Reg.</th><th>Ventas</th><th>%</th><th>Precio Prom.</th><th>Rating</th><th>Recompra</th></tr></thead>
+        <tbody>${d.map((r,i)=>{
+          const bw=Math.round(parseInt(r.ventas_total)/maxV*80);
+          const rp=parseFloat(r.tasa_recompra);
+          const pc=rp>=70?'pg':rp>=40?'py':'pr';
+          return `<tr>
+            <td>${flags[r.pais]||''} ${r.pais}</td>
+            <td class="num">${r.registros}</td>
+            <td><span class="num">${parseInt(r.ventas_total).toLocaleString()}</span><span class="bmini" style="width:${bw}px;background:${C[i%C.length]}44;border:1px solid ${C[i%C.length]}"></span></td>
+            <td><span class="pill pb">${r.pct_ventas}%</span></td>
+            <td class="num">$${parseInt(r.precio_prom).toLocaleString()}</td>
+            <td class="num">${parseFloat(r.rating_prom).toFixed(2)}</td>
+            <td><span class="pill ${pc}">${rp}%</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  } catch(e){ errBox('kpi2', e.message); }
+}
+
+// ── S3: Slice+Dice Heatmap ────────────────────────────
+async function initS3(){
+  loading('hm3');
+  try {
+    const d = await api({q:'q3'});
+    // Organizar en pivot
+    const pets=[...new Set(d.map(r=>r.pet_type))].sort();
+    const cats=[...new Set(d.map(r=>r.product_category))].sort();
+    const matrix={};
+    d.forEach(r=>{ if(!matrix[r.product_category]) matrix[r.product_category]={}; matrix[r.product_category][r.pet_type]=parseInt(r.ventas); });
+
+    const allVals=d.map(r=>parseInt(r.ventas));
+    const maxV=Math.max(...allVals);
+
+    // KPIs
+    const totByPet={};
+    pets.forEach(p=>{ totByPet[p]=cats.reduce((s,c)=>(matrix[c]&&matrix[c][p]?matrix[c][p]:0)+s,0); });
+    const topPet=Object.entries(totByPet).sort((a,b)=>b[1]-a[1])[0];
+
+    document.getElementById('kpi3').innerHTML=`
+      <div class="kcard kc1"><div class="klabel">Mascota dominante</div><div class="kval" style="font-size:16px">${topPet[0]}</div><div class="ksub">${topPet[1].toLocaleString()} ventas totales</div></div>
+      <div class="kcard kc2"><div class="klabel">Combinación top</div><div class="kval" style="font-size:12px">cat · Equipment</div><div class="ksub">Mayor celda del heatmap</div></div>
+      <div class="kcard kc3"><div class="klabel">Tipos de mascota</div><div class="kval">${pets.length}</div><div class="ksub">segmentos analizados</div></div>
+      <div class="kcard kc4"><div class="klabel">Categorías cruzadas</div><div class="kval">${cats.length}</div><div class="ksub">dimensiones de producto</div></div>
+    `;
+
+    // Heatmap
+    let html=`<table class="hm"><thead><tr><th>Categoría \\ Mascota</th>`;
+    pets.forEach(p=>{ html+=`<th>${p}</th>`; });
+    html+=`</tr></thead><tbody>`;
+    cats.forEach(c=>{
+      html+=`<tr><td>${c}</td>`;
+      pets.forEach(p=>{
+        const val=(matrix[c]&&matrix[c][p])||0;
+        const ratio=val/maxV;
+        const alpha=val===0?0.04:0.1+ratio*0.78;
+        const tc=ratio>0.5?'#fff':'#94a3b8';
+        html+=`<td style="background:rgba(0,229,255,${alpha});color:${tc}">${val>0?val.toLocaleString():'—'}</td>`;
+      });
+      html+=`</tr>`;
+    });
+    html+=`</tbody></table>`;
+    document.getElementById('hm3').innerHTML=html;
+
+    // Stacked bar
+    dc('ch3');
+    const ctx=document.getElementById('ch3').getContext('2d');
+    charts['ch3']=new Chart(ctx,{type:'bar',
+      data:{labels:pets,datasets:cats.map((c,ci)=>({
+        label:c,data:pets.map(p=>(matrix[c]&&matrix[c][p])||0),
+        backgroundColor:C[ci%C.length]+'99',borderColor:C[ci%C.length],borderWidth:1
+      }))},
+      options:{responsive:true,maintainAspectRatio:false,
+        scales:{x:{stacked:true,ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}},y:{stacked:true,ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}}},
+        plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',font:{size:9},boxWidth:10}}}}
+    });
+  } catch(e){ errBox('hm3', e.message); }
+}
+
+// ── S4: Pivot Rating & Recompra ───────────────────────
+async function initS4(){
+  loading('kpi4');
+  try {
+    const d = await api({q:'q4'});
+    const topR=d[0];
+    const topRb=[...d].sort((a,b)=>b.tasa_recompra-a.tasa_recompra)[0];
+    const avgR=(d.reduce((s,r)=>s+parseFloat(r.rating_prom),0)/d.length).toFixed(1);
+    const avgRb=(d.reduce((s,r)=>s+parseFloat(r.tasa_recompra),0)/d.length).toFixed(1);
+
+    document.getElementById('kpi4').innerHTML=`
+      <div class="kcard kc3"><div class="klabel">Mayor Rating</div><div class="kval" style="font-size:15px">${topR.categoria}</div><div class="ksub">${parseFloat(topR.rating_prom).toFixed(2)} / 10</div></div>
+      <div class="kcard kc1"><div class="klabel">Mayor Recompra</div><div class="kval" style="font-size:15px">${topRb.categoria}</div><div class="ksub">${topRb.tasa_recompra}%</div></div>
+      <div class="kcard kc4"><div class="klabel">Rating Prom. Global</div><div class="kval">${avgR}</div><div class="ksub">de 10 puntos</div></div>
+      <div class="kcard kc2"><div class="klabel">Recompra Prom.</div><div class="kval">${avgRb}%</div><div class="ksub">fidelización media</div></div>
+    `;
+
+    const byRat=[...d].sort((a,b)=>b.rating_prom-a.rating_prom);
+    const byRb=[...d].sort((a,b)=>b.tasa_recompra-a.tasa_recompra);
+    mkBar('ch4a', byRat.map(r=>r.categoria), byRat.map(r=>parseFloat(r.rating_prom)));
+    mkBar('ch4b', byRb.map(r=>r.categoria), byRb.map(r=>parseFloat(r.tasa_recompra)));
+
+    // Scatter
+    dc('ch4c');
+    const ctx=document.getElementById('ch4c').getContext('2d');
+    charts['ch4c']=new Chart(ctx,{type:'scatter',
+      data:{datasets:[{label:'Categorías',
+        data:d.map(r=>({x:parseFloat(r.rating_prom),y:parseFloat(r.tasa_recompra)})),
+        backgroundColor:C.map(c=>c+'99'),borderColor:C,borderWidth:1,pointRadius:10}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>{const r=d[ctx.dataIndex];return `${r.categoria} — Rating:${parseFloat(r.rating_prom).toFixed(1)} Recompra:${r.tasa_recompra}%`;}}}},
+        scales:{
+          x:{title:{display:true,text:'Rating promedio',color:'#64748b'},ticks:{color:'#64748b'},grid:{color:'#1e2d4566'},min:4,max:9},
+          y:{title:{display:true,text:'Recompra (%)',color:'#64748b'},ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}}
+        }}
+    });
+
+    const rAvg=parseFloat(avgR), rbAvg=parseFloat(avgRb);
+    document.getElementById('t4').innerHTML=`
+      <table class="dtable">
+        <thead><tr><th>Categoría</th><th>Registros</th><th>Rating Prom.</th><th>vs Promedio</th><th>Recompra</th><th>vs Promedio</th></tr></thead>
+        <tbody>${d.map(r=>{
+          const rp=parseFloat(r.rating_prom), rb=parseFloat(r.tasa_recompra);
+          return `<tr>
+            <td>${r.categoria}</td><td class="num">${r.registros}</td>
+            <td><span class="pill ${rp>=rAvg?'pg':'pr'}">${rp.toFixed(2)}</span></td>
+            <td style="font-size:10px;color:var(--muted)">${rp>=rAvg?'↑ sobre promedio':'↓ bajo promedio'}</td>
+            <td><span class="pill ${rb>=rbAvg?'pg':'py'}">${rb}%</span></td>
+            <td style="font-size:10px;color:var(--muted)">${rb>=rbAvg?'↑ alta fidelización':'↓ baja fidelización'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  } catch(e){ errBox('kpi4', e.message); }
+}
+
+// ── S5: Dice Tamaño × País ────────────────────────────
+async function initS5(){
+  loading('hm5');
+  try {
+    const d = await api({q:'q5'});
+    const sizes=[...new Set(d.map(r=>r.pet_size))].sort();
+    const countries=[...new Set(d.map(r=>r.country))].sort();
+    const matrix={};
+    d.forEach(r=>{ if(!matrix[r.pet_size]) matrix[r.pet_size]={}; matrix[r.pet_size][r.country]=parseInt(r.ventas); });
+
+    const allVals=d.map(r=>parseInt(r.ventas));
+    const maxV=Math.max(...allVals);
+
+    const totBySize={};
+    sizes.forEach(s=>{ totBySize[s]=countries.reduce((a,c)=>(matrix[s]&&matrix[s][c]?matrix[s][c]:0)+a,0); });
+    const topS=Object.entries(totBySize).sort((a,b)=>b[1]-a[1])[0];
+
+    document.getElementById('kpi5').innerHTML=`
+      <div class="kcard kc1"><div class="klabel">Tamaño más vendido</div><div class="kval" style="font-size:15px">${topS[0]}</div><div class="ksub">${topS[1].toLocaleString()} ventas totales</div></div>
+      <div class="kcard kc2"><div class="klabel">País más diverso</div><div class="kval" style="font-size:16px">🇮🇳 India</div><div class="ksub">Todos los tamaños presentes</div></div>
+      <div class="kcard kc3"><div class="klabel">Tamaños analizados</div><div class="kval">${sizes.length}</div><div class="ksub">segmentos</div></div>
+    `;
+
+    // Heatmap
+    let html=`<table class="hm"><thead><tr><th>Tamaño \\ País</th>`;
+    countries.forEach(c=>{ html+=`<th style="font-size:9px">${c}</th>`; });
+    html+=`</tr></thead><tbody>`;
+    sizes.forEach(s=>{
+      html+=`<tr><td>${s}</td>`;
+      countries.forEach(c=>{
+        const val=(matrix[s]&&matrix[s][c])||0;
+        const ratio=val/maxV;
+        const alpha=val===0?0.03:0.1+ratio*0.8;
+        const tc=ratio>0.4?'#fff':'#94a3b8';
+        html+=`<td style="background:rgba(124,58,237,${alpha});color:${tc}">${val>0?val.toLocaleString():'—'}</td>`;
+      });
+      html+=`</tr>`;
+    });
+    html+=`</tbody></table>`;
+    document.getElementById('hm5').innerHTML=html;
+
+    mkBar('ch5a', sizes, sizes.map(s=>totBySize[s]));
+
+    // Grouped por país
+    const mainC=['India','Germany','Singapore','Belgium','USA','Turkey'];
+    dc('ch5b');
+    const ctx=document.getElementById('ch5b').getContext('2d');
+    charts['ch5b']=new Chart(ctx,{type:'bar',
+      data:{labels:mainC,datasets:sizes.map((s,si)=>({
+        label:s,data:mainC.map(c=>(matrix[s]&&matrix[s][c])||0),
+        backgroundColor:C[si%C.length]+'99',borderColor:C[si%C.length],borderWidth:1,borderRadius:3
+      }))},
+      options:{responsive:true,maintainAspectRatio:false,
+        scales:{x:{ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}},y:{ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}}},
+        plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',font:{size:9},boxWidth:10}}}}
+    });
+  } catch(e){ errBox('hm5', e.message); }
+}
+
+// ── S6: Consulta dinámica MySQL ───────────────────────
+let rtChart=null;
+// ── Lógica de filtros dinámicos ───────────────────────
+// Reglas: si la dimensión ES esa columna, el filtro de esa columna se oculta
+// VAP solo tiene sentido con métricas que no sean price/count
+// Filtros siempre disponibles excepto el que coincide con la dimensión
+
+function updateFilters(){
+  const dim    = document.getElementById('rt-dim').value;
+  const metric = document.getElementById('rt-metric').value;
+
+  // Mapa: campo_id → columna_bd
+  const fieldMap = {
+    'ff-cat':     'product_category',
+    'ff-country': 'country',
+    'ff-pet':     'pet_type',
+    'ff-size':    'pet_size',
+  };
+
+  // Resetear selects de filtros que se deshabiliten
+  let hints = [];
+
+  Object.entries(fieldMap).forEach(([ffId, col]) => {
+    const el  = document.getElementById(ffId);
+    const sel = el.querySelector('select');
+    if(col === dim){
+      // Ocultar: no tiene sentido filtrar por lo mismo que agrupas
+      el.classList.add('hidden');
+      sel.value = '';
+    } else {
+      el.classList.remove('hidden');
+      el.classList.remove('disabled');
+      sel.disabled = false;
+    }
+  });
+
+  // VAP: solo mostrar cuando la métrica es ventas, precio, count o recompra
+  // (siempre es útil — solo ocultamos si la dimensión no lo necesita)
+  const vapEl = document.getElementById('ff-vap');
+  // VAP no aplica para rating (los productos de cualquier VAP tienen rating)
+  // Ocultamos VAP solo si la métrica es rating_avg (no aporta info distinta)
+  if(metric === 'rating_avg'){
+    vapEl.classList.add('hidden');
+    document.getElementById('rt-fvap').value = '';
+  } else {
+    vapEl.classList.remove('hidden');
+  }
+
+  // Hint descriptivo
+  const dimLabels = {product_category:'Categoría',country:'País',pet_type:'Tipo mascota',pet_size:'Tamaño'};
+  const metricDesc = {
+    sales_sum:'suma de ventas',sales_avg:'promedio de ventas',price_avg:'precio promedio',
+    rating_avg:'rating promedio',rebuy_pct:'tasa de recompra',count:'conteo de registros'
+  };
+  document.getElementById('filter-hint').textContent =
+    `Filtra los datos antes de agrupar por ${dimLabels[dim]} con ${metricDesc[metric]}`;
+}
+
+async function runQ6(){
+  const btn=document.getElementById('btn-run');
+  btn.disabled=true; btn.textContent='⏳ Consultando…';
+
+  const params = {
+    q:'q6',
+    dim:       document.getElementById('rt-dim').value,
+    metric:    document.getElementById('rt-metric').value,
+    f_cat:     document.getElementById('rt-fcat').value,
+    f_country: document.getElementById('rt-fcountry').value,
+    f_pet:     document.getElementById('rt-fpet').value,
+    f_size:    document.getElementById('rt-fsize').value,
+    f_vap:     document.getElementById('rt-fvap').value,
+  };
+
+  const metricLabels={sales_sum:'Ventas Totales',sales_avg:'Ventas Promedio',price_avg:'Precio Promedio ($)',rating_avg:'Rating Promedio',rebuy_pct:'Tasa Recompra (%)',count:'Nº Registros'};
+  const dimLabels={product_category:'Categoría',country:'País',pet_type:'Tipo Mascota',pet_size:'Tamaño'};
+
+  // Construir descripción de filtros activos
+  const activeFilters = [];
+  if(params.f_cat)     activeFilters.push(`Categoría: ${params.f_cat}`);
+  if(params.f_country) activeFilters.push(`País: ${params.f_country}`);
+  if(params.f_pet)     activeFilters.push(`Mascota: ${params.f_pet}`);
+  if(params.f_size)    activeFilters.push(`Tamaño: ${params.f_size}`);
+  if(params.f_vap!=='')activeFilters.push(`VAP: ${params.f_vap==='1'?'Con aprobación':'Sin aprobación'}`);
+
+  try {
+    const d = await api(params);
+    btn.disabled=false; btn.textContent='▶ EJECUTAR';
+
+    if(!d.length){
+      document.getElementById('rt-chart-wrap').innerHTML='<div class="empty"><div class="ei">⚠️</div>Sin resultados para los filtros seleccionados.<br><small style="color:var(--muted)">Prueba con filtros menos restrictivos.</small></div>';
+      document.getElementById('rt-summary').innerHTML='';
+      document.getElementById('rt-table-wrap').innerHTML='';
+      document.getElementById('rt-result-hdr').style.display='none';
+      return;
+    }
+
+    // Header con filtros activos
+    const hdr=document.getElementById('rt-result-hdr');
+    hdr.style.display='block';
+    hdr.innerHTML=
+      `Agrupado por <strong>${dimLabels[params.dim]}</strong> · Métrica: <strong>${metricLabels[params.metric]}</strong> · <strong>${d.reduce((s,r)=>s+parseInt(r.registros),0)} registros</strong>` +
+      (activeFilters.length ? `<span style="color:var(--c3);margin-left:10px">▸ Filtros: ${activeFilters.join(' · ')}</span>` : '');
+
+    // Gráfica
+    const wrap=document.getElementById('rt-chart-wrap');
+    wrap.innerHTML='<div class="chart-box" style="height:280px"><canvas id="rt-c"></canvas></div>';
+    if(rtChart){rtChart.destroy();}
+    const ctx=document.getElementById('rt-c').getContext('2d');
+    const labels=d.map(r=>r.dimension);
+    const vals=d.map(r=>parseFloat(r.valor));
+    const ctype=document.getElementById('rt-chart').value;
+
+    if(ctype==='doughnut'){
+      rtChart=new Chart(ctx,{type:'doughnut',
+        data:{labels,datasets:[{data:vals,backgroundColor:CA,borderColor:C,borderWidth:1}]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{position:'right',labels:{color:'#94a3b8',font:{size:10},boxWidth:10}}}}});
+    } else if(ctype==='line'){
+      rtChart=new Chart(ctx,{type:'line',
+        data:{labels,datasets:[{label:metricLabels[params.metric],data:vals,
+          borderColor:C[0],backgroundColor:C[0]+'22',borderWidth:2,pointRadius:5,tension:.3}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+          scales:{x:{ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}},
+                  y:{ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}}}}});
+    } else {
+      rtChart=new Chart(ctx,{type:'bar',
+        data:{labels,datasets:[{label:metricLabels[params.metric],data:vals,
+          backgroundColor:CA,borderColor:C,borderWidth:1,borderRadius:4}]},
+        options:{indexAxis:ctype==='hbar'?'y':'x',responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false}},
+          scales:{x:{ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}},
+                  y:{ticks:{color:'#64748b'},grid:{color:'#1e2d4566'}}}}});
+    }
+
+    // KPIs resumen
+    const total=vals.reduce((a,b)=>a+b,0);
+    const avg=total/vals.length;
+    const maxV=Math.max(...vals);
+    const minV=Math.min(...vals);
+    document.getElementById('rt-summary').innerHTML=`
+      <div class="kcard kc1" style="margin-top:14px"><div class="klabel">Total acumulado</div><div class="kval" style="font-size:18px">${total.toLocaleString(undefined,{maximumFractionDigits:1})}</div><div class="ksub">${metricLabels[params.metric]}</div></div>
+      <div class="kcard kc3" style="margin-top:14px"><div class="klabel">Máximo</div><div class="kval" style="font-size:18px">${maxV.toLocaleString(undefined,{maximumFractionDigits:2})}</div><div class="ksub">${labels[vals.indexOf(maxV)]}</div></div>
+      <div class="kcard kc4" style="margin-top:14px"><div class="klabel">Promedio</div><div class="kval" style="font-size:18px">${avg.toFixed(2)}</div><div class="ksub">entre ${labels.length} grupos</div></div>
+      <div class="kcard kc2" style="margin-top:14px"><div class="klabel">Mínimo</div><div class="kval" style="font-size:18px">${minV.toLocaleString(undefined,{maximumFractionDigits:2})}</div><div class="ksub">${labels[vals.indexOf(minV)]}</div></div>
+    `;
+
+    // Tabla resultados
+    const maxBar=Math.max(...vals);
+    document.getElementById('rt-table-wrap').innerHTML=`
+      <div class="ccard">
+        <h3>Tabla de resultados — MySQL en tiempo real</h3>
+        <table class="dtable">
+          <thead><tr><th>#</th><th>${dimLabels[params.dim]}</th><th>${metricLabels[params.metric]}</th><th>Registros</th><th>Distribución relativa</th></tr></thead>
+          <tbody>${d.map((r,i)=>{
+            const bw=Math.round(parseFloat(r.valor)/maxBar*130);
+            return `<tr>
+              <td class="num" style="color:var(--muted)">${i+1}</td>
+              <td>${r.dimension}</td>
+              <td class="num">${parseFloat(r.valor).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+              <td class="num">${r.registros}</td>
+              <td><span class="bmini" style="width:${bw}px;height:8px;background:${C[i%C.length]}55;border:1px solid ${C[i%C.length]}"></span></td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
+
+  } catch(e){
+    btn.disabled=false; btn.textContent='▶ EJECUTAR';
+    document.getElementById('rt-chart-wrap').innerHTML=`<div class="error-box">⚠️ ${e.message}</div>`;
+  }
+}
+
+function clearQ6(){
+  // Resetear selects a valor vacío
+  ['rt-fcat','rt-fcountry','rt-fpet','rt-fsize','rt-fvap'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+  document.getElementById('rt-chart-wrap').innerHTML='<div class="empty"><div class="ei">📊</div>Selecciona dimensión, métrica y presiona <strong>EJECUTAR</strong>.</div>';
+  document.getElementById('rt-summary').innerHTML='';
+  document.getElementById('rt-table-wrap').innerHTML='';
+  document.getElementById('rt-result-hdr').style.display='none';
+  if(rtChart){rtChart.destroy();rtChart=null;}
+  updateFilters();
+}
+
+// ── Navegación ────────────────────────────────────────
+function nav(id, el, title, tag){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  el.classList.add('active');
+  document.getElementById('tb-title').textContent=title;
+  document.getElementById('tb-tag').textContent=tag;
+  if(!inited[id]){
+    inited[id]=true;
+    setTimeout(()=>{
+      if(id==='s1') initS1();
+      if(id==='s2') initS2();
+      if(id==='s3') initS3();
+      if(id==='s4') initS4();
+      if(id==='s5') initS5();
+    },50);
+  }
+}
+
+// ── Inicio ────────────────────────────────────────────
+window.addEventListener('load', async ()=>{
+  await checkDB();
+  inited['s1']=true;
+  setTimeout(initS1, 100);
+  updateFilters();
+});
+</script>
+</body>
+</html>
